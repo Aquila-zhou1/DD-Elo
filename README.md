@@ -63,22 +63,19 @@ python StandardIC.py --cache
 ## 📂 Repository Structure
 ```Plaintext
 .
-├── data/                       # Dataset directory (managed via Hugging Face Hub, git-ignored)
-│   ├── raw/                    # Raw move-level chess logs
-│   ├── processed/              # Parsed game-level data
-│   └── cache/                  # Serialized player objects and matrices (.pkl)
-├── src/                        # Core algorithmic modules
-│   ├── ddm_elo.py              # Implementation of the core DD-Elo framework
-│   ├── elo_per_game.py         # Standard Elo baseline calculation per game
-│   ├── AI_DA_IC.py             # Accuracy/Consistency indicators (Cache mode)
-│   ├── LeadTime.py             # Average Lead-Time metrics (Cache mode)
-│   └── StandardIC.py           # Standard IC evaluation suite (Cache mode)
+├── data/                       # Datasets, parsed data, and caches (.pkl)
+├── src/                        
+│   ├── ddm_elo.py              # Core DD-Elo model
+│   ├── elo_per_game.py         # Elo baseline algorithm
+│   ├── AI_DA_IC.py
+│   ├── LeadTime.py
+│   └── StandardIC.py
 ├── scripts/
-│   └── download_data.py        # Automated download utility for HF dataset mirrors
-├── data_analysis/              # Output directory for evaluation results, tables, and plots
-├── main.py                     # Unified entrance file (Handles metrics calculation & visualization)
-├── requirements.txt            # Environment configurations
-└── README.md                   # Project documentation
+│   └── download_data.py        # Automated download utility for HF datasets
+├── data_analysis/              # Results output directory
+├── main.py                     
+├── requirements.txt            
+└── README.md                   
 ```
 ## ✍️ Citation
 If you find our code, dataset, or research framework useful for your work, please cite our paper.

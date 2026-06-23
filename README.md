@@ -74,13 +74,4 @@ python main.py
 └── README.md                   # Project documentation
 ```
 ## ✍️ Citation
-If you find our code, dataset, or research framework useful for your work, please cite our paper:
-
-```Code snippet
-@inproceedings{zhi2026ddelo,
-  title={DD-Elo: Drift Diffusion Models for Chess Skill Assessment},
-  author={Zhi, Xiangyu and and Yang, Yu and Li, Wenbin and Wang, Limin and Yang, Tianming},
-  booktitle={IEEE Conference on Games (CoG)},
-  year={2026}
-}
-```
+If you find our code, dataset, or research framework useful for your work, please cite our paper.

@@ -1,5 +1,4 @@
-# Accelerating Skill Assessment in Chess:
-A Drift-Diffusion-Enhanced Elo Rating System
+# Accelerating Skill Assessment in Chess: A Drift-Diffusion-Enhanced Elo Rating System
 
 This repository contains the official implementation of the paper:
 **"Accelerating Skill Assessment in Chess: A Drift-Diffusion-Enhanced Elo Rating System"** (Accepted by **IEEE Conference on Games (CoG) 2026**).

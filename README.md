@@ -1,7 +1,8 @@
-# DD-Elo: Drift Diffusion Models for Chess Skill Assessment
+# Accelerating Skill Assessment in Chess:
+A Drift-Diffusion-Enhanced Elo Rating System
 
 This repository contains the official implementation of the paper:
-**"DD-Elo: Drift Diffusion Models for Chess Skill Assessment"** (Accepted by **IEEE Conference on Games (CoG) 2026**).
+**"Accelerating Skill Assessment in Chess: A Drift-Diffusion-Enhanced Elo Rating System"** (Accepted by **IEEE Conference on Games (CoG) 2026**).
 
 <p align="center">
   <img src="fig/INTRO.png" alt="Performance Showcase" width="48%" />
@@ -20,7 +21,7 @@ To make it as easy as possible to verify our work, we provide pre-computed playe
 
 ### 1. Clone the Repository & Install Dependencies
 ```bash
-git clone [https://github.com/YourGitHubUsername/DD-Elo.git](https://github.com/YourGitHubUsername/DD-Elo.git)
+git clone https://github.com/Aquila-zhou1/DD-Elo.git
 cd DD-Elo
 pip install -r requirements.txt
 ```

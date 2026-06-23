@@ -13,7 +13,7 @@ from collections import defaultdict
 import src.elo_per_game as elo_per_game # Elo calculate module
 from src.ddm_elo import dd_elo # DD-Elo core algorithm
 from itertools import groupby
-import argparse # 【新增】
+import argparse 
 
 # ==========================================
 # 0. Parse command-line arguments
@@ -46,8 +46,8 @@ CONV_KERNEL_LARGE = 11    # large convolution kernel size (for trend detection)
 TREND_THRESHOLD = 50      # trend threshold (+80 rise, -80 drop)
 SIGNAL_SPREAD = 5         # signal spread forward/backward (total 5+1+5=11 games)
 MIN_GAMES_THRESHOLD = 50  # minimum games threshold for random selection
-NUM_RANDOM_PLAYERS = 1000  # [MODIFIED] total number of players for analysis (expanded)
-NUM_DRAW_PLAYERS = 10     # [ADDED] number of players to draw (5 rows x 2 cols)
+NUM_RANDOM_PLAYERS = 100  # total number of players for analysis (expanded)
+NUM_DRAW_PLAYERS = 10     # number of players to draw (5 rows x 2 cols)
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -83,17 +83,14 @@ def calculate_signals(trend_series, threshold, spread):
     N = len(trend_series)
     signals = np.zeros(N)
 
-    # 1. 获取所有触发点
     high_indices = np.where(trend_series >= threshold)[0]
     low_indices = np.where(trend_series <= -threshold)[0]
 
-    # 2. 合并触发点并按索引排序 (模拟时间线推进)
     triggers = []
     for idx in high_indices: triggers.append((idx, 1))
     for idx in low_indices: triggers.append((idx, -1))
     triggers.sort(key=lambda x: x[0])
 
-    # 3. 遍历触发点进行赋值或冲突消除
     for idx, val in triggers:
         start = max(0, idx - spread)
         end = min(N, idx + spread + 1)
@@ -101,7 +98,6 @@ def calculate_signals(trend_series, threshold, spread):
         current_window = signals[start:end]
 
         if np.any(current_window == opposite):
-            # === 发现冲突，执行消除逻辑 ===
             conflict_rel_idx = np.where(current_window == opposite)[0][0]
             conflict_abs_idx = start + conflict_rel_idx
             signals[conflict_abs_idx] = 0
@@ -221,7 +217,7 @@ for p_name in selected_players:
     games = player_dict[p_name]
     games.sort(key=lambda x: x['game_id'])
     
-        # 1. Initialize first game
+    # 1. Initialize first game
     if len(games) > 0:
         games[0]['real_elo'] = games[0]['elo']
         current_real_elo = games[0]['real_elo']
@@ -367,7 +363,6 @@ for p_name in selected_players:
             
             ddcps_result_df = dd_elo(temp_csv_path, p_name, elo0)
             print(f"DD-Elo returned {len(ddcps_result_df)} games")
-            # 5. 回填 delta_ddcps 到 player_dict
             if 'delta_ddcps' in ddcps_result_df.columns:
                 deltas = ddcps_result_df['delta_ddcps'].values
                 safe_len = min(len(deltas), segment_len)
@@ -602,7 +597,7 @@ for p_name in selected_players:
             seg_ddcps = ddcps_elos[start_idx:end_idx]
             
             # ---------------------------------------------------------
-            # Area Improvemen
+            # Area Improvement
             # ---------------------------------------------------------
             diff_abs_sum = np.sum(np.abs(seg_ddcps - seg_real))
             

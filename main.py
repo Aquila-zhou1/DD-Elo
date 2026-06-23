@@ -10,8 +10,8 @@ import os
 import pickle
 import random
 from collections import defaultdict
-import elo_per_game # <--- 【新增】导入 Elo 计算模块
-from ddcps_elo import ddcps # <--- 导入外部模块
+import src.elo_per_game as elo_per_game # Elo calculate module
+from src.ddm_elo import dd_elo # DD-Elo core algorithm
 from itertools import groupby
 import argparse # 【新增】
 
@@ -67,39 +67,12 @@ def apply_trend_convolution(data, window_size):
     趋势识别卷积核 (线性趋势)
     返回: 趋势得分序列 (边缘补0，长度与原始数据一致)
     """
-    # 1. 构建线性趋势核 [-1, ..., 1]
     kernel = np.linspace(-1, 1, window_size)
-    
-    # 2. 归一化 (关键：为了让阈值80有物理意义，这里建议不除以绝对值和，
-    # 或者你需要确认80这个阈值是基于什么归一化标准的。
-    # 这里保持之前的逻辑，但请注意阈值80对于归一化后的卷积值可能非常大)
-    # 假设 Elo 变化很大，这里暂不归一化或者只做简单缩放，否则很难达到 80
-    # 修改：为了让趋势值能达到 80 这种量级，我们只做长度归一化，不做幅度归一化
-    # 这样卷积输出近似于：窗口内的总上升量
-    # kernel = kernel  <-- 如果不归一化，数值会很大
-    # 按照惯例，为了让它代表“局部斜率”，通常除以一个系数。
-    # 这里为了配合你要求的 80 阈值，我暂时不做强归一化，只除以 (window_size/2) 近似平均每步变化
-    # *注*：如果你的Elo波动很小，请调低阈值 80。
     kernel = kernel / (np.sum(np.abs(kernel)) if np.sum(np.abs(kernel)) != 0 else 1) 
-    # 为了放大显示效果以匹配 80 阈值，我们在绘图和计算时可能需要乘一个系数，
-    # 或者这里假设用户已经调好了阈值。
-    # **修正**：通常卷积后的值很小（例如 2.5）。如果你确定阈值是 80，
-    # 意味着你希望捕捉极端的 Elo 暴涨。这里我添加一个放大系数 100 方便观察。
-
-    
-    # 3. 计算 Valid 卷积
     conv_valid = np.convolve(data, kernel, mode='valid')
-    
-    # 4. 补零对齐
     pad_len = window_size // 2
     zeros = np.zeros(pad_len)
     result = np.concatenate([zeros, conv_valid, zeros])
-    
-    # 长度修正 (针对偶数窗口)
-    # if len(result) > len(data): result = result[:len(data)]
-    # elif len(result) < len(data): 
-    #     result = np.append(result, np.zeros(len(data)-len(result)))
-        
     return result
 
 def calculate_signals(trend_series, threshold, spread):
@@ -115,52 +88,34 @@ def calculate_signals(trend_series, threshold, spread):
     low_indices = np.where(trend_series <= -threshold)[0]
 
     # 2. 合并触发点并按索引排序 (模拟时间线推进)
-    # 格式: (index, value)
     triggers = []
     for idx in high_indices: triggers.append((idx, 1))
     for idx in low_indices: triggers.append((idx, -1))
-    # 按 game_id (index) 排序
     triggers.sort(key=lambda x: x[0])
 
     # 3. 遍历触发点进行赋值或冲突消除
     for idx, val in triggers:
         start = max(0, idx - spread)
         end = min(N, idx + spread + 1)
-
-        # 检查当前窗口内是否存在"反义"信号 (冲突检测)
-        # 冲突定义: 准备赋 1 但窗口内有 -1，或准备赋 -1 但窗口内有 1
         opposite = -val
         current_window = signals[start:end]
 
         if np.any(current_window == opposite):
             # === 发现冲突，执行消除逻辑 ===
-
-            # 找到窗口内第一个冲突点在全局的索引
-            # np.where 返回相对窗口的索引，需要加上 start
             conflict_rel_idx = np.where(current_window == opposite)[0][0]
             conflict_abs_idx = start + conflict_rel_idx
-
-            # A.把自己这一点改成 0
             signals[conflict_abs_idx] = 0
-
-            # B. 向前遍历消除 (Backwards)
             curr = conflict_abs_idx - 1
             while curr >= 0 and signals[curr] != 0:
                 signals[curr] = 0
                 curr -= 1
-
-            # C. 向后遍历消除 (Forwards)
             curr = conflict_abs_idx + 1
             while curr < N and signals[curr] != 0:
                 signals[curr] = 0
                 curr += 1
-
-            # D. break结束循环 (这里的语义是停止本次对 spread 窗口的赋值操作)
             continue
 
         else:
-            # === 无冲突，正常赋值 ===
-            # (允许覆盖 0 或 同类数值)
             signals[start:end] = val
 
     return signals
@@ -193,18 +148,12 @@ if not cache_loaded:
         exit()
 
     print("正在构建扩展的棋手字典结构...")
-    # --- 原始构建逻辑开始 ---
     white_data = df[['white_player', 'white_elo', 'mask_cpl_diff_mean', 'game_id', 'win', 'elo_diff']].copy()
     white_data['mask_cpl_diff_mean'] *= 10  
     white_data['op_elo'] = white_data['white_elo'] - white_data['elo_diff']
     white_data.rename(columns={'white_player': 'player', 'white_elo': 'elo', 'mask_cpl_diff_mean': 'evidence'}, inplace=True)
     white_data_inter = white_data.set_index(pd.Index(range(0,len(white_data)*2,2)))
 
-    # 黑方 (注意：mask_cpl_diff_mean 是白-黑，所以对于黑方来说 evidence 应该取反吗？
-    # 通常 evidence (CPL diff) 是 "我 - 对手"。
-    # 如果 CSV 里的 mask_cpl_diff_mean 是 "白 - 黑"。
-    # 那么对于白方：evidence = mask_cpl_diff_mean
-    # 那么对于黑方：evidence = -mask_cpl_diff_mean (黑 - 白)
     black_data = pd.DataFrame({
         'player': df['black_player'],
         'elo': df['white_elo'] - df['elo_diff'],
@@ -226,14 +175,13 @@ if not cache_loaded:
             'game_id': idx, 
             'elo': row['elo'],
             'evidence': row['evidence'],
-            'signal': 0, # 默认为 0,
-            'data_id': row['game_id'],   # <--- 新增：原始 game_id
-            'delta_ddcps': 0.0,           # <--- 新增：初始化 delta_ddcps
-            'real_elo': 0.0,    # <--- 【新增】初始化 real_elo
-            'op_elo': row['op_elo'], # <--- 【新增】对手分
-            'win': row['win']   # <--- 【新增】胜负
+            'signal': 0,
+            'data_id': row['game_id'],
+            'delta_ddcps': 0.0,
+            'real_elo': 0.0,
+            'op_elo': row['op_elo'], 
+            'win': row['win']   
         })
-    # --- 原始构建逻辑结束 ---
 
     # 构建完成后存入缓存
     print(f"正在保存 player_dict 到缓存: {CACHE_FILE} ...")
@@ -248,8 +196,6 @@ if CACHE_MODE:
     print(f"【缓存模式】正在从 {TEMP_DATA_DIR} 提取棋手名单...")
     import re
     cached_files = os.listdir(TEMP_DATA_DIR)
-    # 匹配 {p_name}_section{num}.csv 并提取 p_name
-    # 采用 set 去重
     unique_names = set()
     for f in cached_files:
         match = re.match(r"(.+)_section\d+\.csv", f)
@@ -257,44 +203,24 @@ if CACHE_MODE:
             unique_names.add(match.group(1))
     
     valid_players = list(unique_names)
-    # valid_players = ['logicalteo']
-    # valid_players = ['GeraldSam', 'Yves-Hobbah', 'PaxOtium', 'CowardPawn', 'HarrenB','Ja_han','Jebster','astrong','phapostma','ALOUZE']
     print(f"找到缓存棋手共: {len(valid_players)} 人")
 else:
     # 正常模式逻辑
     valid_players = [p for p, games in player_dict.items() if len(games) >= MIN_GAMES_THRESHOLD]
-# valid_players = ["infodanyboy21aolfr","Alexander_Zubov","Lemoniaga","sidroh","pavelpavel"]
 if len(valid_players) < NUM_RANDOM_PLAYERS:
     print(f"警告：符合局数要求(>{MIN_GAMES_THRESHOLD})的棋手不足 {NUM_RANDOM_PLAYERS} 人。")
     selected_players = valid_players
 else:
     selected_players = random.sample(valid_players, NUM_RANDOM_PLAYERS)
 
-# print(f"已选择 {len(selected_players)} 位棋手。")
-
-# print("======尝试一下=========")
-# for p_name in selected_players:
-#     games = player_dict[p_name] # 此时已经按时间排好序
-    
-    
-#     # 使用 itertools.groupby 根据 signal 进行分段
-#     # groupby 返回 (key, group_iterator)，我们需要转为 list
-#     # 注意：groupby 只能处理连续的相同值，正是我们需要的
-#     segment_idx = 0
-#     current_game_idx = 0 # 追踪在 games 列表中的全局索引
-    
-#     for signal_val, group in groupby(games, key=lambda x: x['signal']):
-#         elo0 = list(group)[0]['real_elo']
-# breakpoint()
 
 # ==========================================
-# 4.1 新增需求：Real Elo 计算
+# 4.1 Real Elo 计算
 # ==========================================
 print("正在计算 Real Elo 轨迹...")
 
 for p_name in selected_players:
     games = player_dict[p_name]
-    # 必须确保按时间排序
     games.sort(key=lambda x: x['game_id'])
     
     # 1. 初始化第一局
@@ -305,9 +231,6 @@ for p_name in selected_players:
         # 2. 迭代计算后续局
         for i in range(1, len(games)):
             prev_game = games[i-1]
-            
-            # 使用上一局的数据来更新当前局的 Real Elo
-            # 参数: 上一局RealElo, 上一局对手Elo, 上一局胜负, K因子
             new_val = elo_per_game.calculate_new_elo(
                 my_elo=current_real_elo, 
                 op_elo=prev_game['op_elo'], 
@@ -323,46 +246,31 @@ print("Real Elo 计算完成。正在计算 Signal...")
 # ==========================================
 # 4.2 随机采样与信号计算
 # ==========================================
-# 用于统计相关性的全局列表
 all_signal_values = []
 all_evidence_values = []
 
 for p_name in selected_players:
     games = player_dict[p_name]
     games.sort(key=lambda x: x['game_id'])
-    
-    # 提取序列
     raw_elos = np.array([g['real_elo'] for g in games])
     raw_evidence = np.array([g['evidence'] for g in games])
     
     # 计算 Trend (Large Kernel)
     trend_large = apply_trend_convolution(raw_elos, CONV_KERNEL_LARGE)
-    
-    # 计算 Signal
     signals = calculate_signals(trend_large, TREND_THRESHOLD, SIGNAL_SPREAD)
-    
-    # 更新字典中的 signal 值 (虽然绘图时可以直接用 signals 数组，但为了保持数据结构一致性写回去)
     for i, g in enumerate(games):
-        g['signal'] = signals[i]
-        
-    # 收集数据用于相关性分析
+        g['signal'] = signals[i]        
     all_signal_values.extend(signals)
     all_evidence_values.extend(raw_evidence)
 
 
 
 # ==========================================
-# 4.3 新增需求：DDCPS 计算 (分段与大文件处理)
+# 4.3 DD-Elo 计算 
 # ==========================================
 print("\n正在处理 DDCPS 计算需求...")
 
-
-
-
 # --- 步骤 A: 优化大文件读取 ---
-# 策略：先收集所有选中棋手需要用到的 data_id，然后流式扫描 40G 文件，
-# 只把命中 id 的行加载到内存，避免反复 IO。
-
 # 1. 收集目标 ID 集合
 target_game_ids = set()
 for p_name in selected_players:
@@ -371,24 +279,14 @@ for p_name in selected_players:
 
 print(f"需要检索的 Game ID 总数: {len(target_game_ids)}")
 
-# 2. 打印检查 (Check Requirement)
-# check_player = selected_players[0]
-# print(f"检查棋手 {check_player} 的前 5 个 data_id: {[g['data_id'] for g in player_dict[check_player][:5]]}")
-
 # 3. 扫描大文件 (Chunk Reading)
 if not CACHE_MODE:
     print(f"正在扫描大文件 {BIG_DATA_FILE} (这可能需要几分钟)...")
     matched_rows = []
     try:
-        # 假设大文件的 ID 列名为 'Site' (Lichess标准) 或 'game_id'。
-        # 这里假设大文件的第一列或者是包含 ID 的列。
-        # 为了安全，请根据实际大文件表头修改 usecols 或 dtype。
-        # chunksize 设置为 10万行
         chunk_iter = pd.read_csv(BIG_DATA_FILE, chunksize=100000, on_bad_lines='skip', low_memory=False)
         
         for chunk in chunk_iter:
-            # 假设大文件中存 ID 的列叫 'game_id'，如果叫 'Site' 且是 URL，可能需要解析
-            # 这里假设 csv 里有一列叫 'game_id' 与 input file 对应
             if 'game_id' in chunk.columns:
                 mask = chunk['game_id'].isin(target_game_ids)
                 matched_rows.append(chunk[mask])
@@ -399,7 +297,6 @@ if not CACHE_MODE:
         # 合并所有命中的行到内存 DataFrame
         if matched_rows:
             big_data_subset = pd.concat(matched_rows)
-            # 建立索引方便查询
             big_data_subset.set_index('game_id', inplace=True)
             print(f"大文件检索完成，提取相关对局数: {len(big_data_subset)}")
         else:
@@ -412,47 +309,23 @@ if not CACHE_MODE:
 
 else:
     print("【缓存模式】跳过 40G 大文件扫描。")
-    big_data_subset = pd.DataFrame() # 设为空，防止后续引用报错
+    big_data_subset = pd.DataFrame() 
 
 
 # --- 步骤 B: 分段处理与 DDCPS 计算 ---
 print("正在进行分段与 DDCPS 调用...")
 
 for p_name in selected_players:
-    games = player_dict[p_name] # 此时已经按时间排好序
-    print("=====================")
+    games = player_dict[p_name] 
     print(f"玩家{p_name}总的对局个数为：{len(games)}")
     
-    
-    
-    # 使用 itertools.groupby 根据 signal 进行分段
-    # groupby 返回 (key, group_iterator)，我们需要转为 list
-    # 注意：groupby 只能处理连续的相同值，正是我们需要的
     segment_idx = 0
-    current_game_idx = 0 # 追踪在 games 列表中的全局索引
-    # if(groupby(games, key=lambda x: x['signal'])):
-    #     print("groupby(games, key=lambda x: x['signal'])不为空")
-    # ssdsds=1
+    current_game_idx = 0 
     for signal_val, group in groupby(games, key=lambda x: x['signal']):
-        print(f"signal_val为：{signal_val}")
         print(f"group的个数为：{group}")
         # 第一步：立即将迭代器转换成列表并保存
         segment_games = list(group) 
-        # 1. 提取当前段内所有的 data_id
         current_ids = [g['data_id'] for g in segment_games]
-
-        # # 2. 判断是否有重复
-        # if len(current_ids) != len(set(current_ids)):
-        #     print(f"⚠️ 发现重复！段内总局数: {len(current_ids)}, 唯一局数: {len(set(current_ids))}")
-            
-        #     # 3. 如果你想看具体是哪个 ID 重复了，可以使用以下逻辑：
-        #     seen = set()
-        #     duplicates = set(x for x in current_ids if x in seen or seen.add(x))
-        #     print(f"重复的 ID 为: {duplicates}")
-        # else:
-        #     print(f"✅ 该段内所有 data_id 都是唯一的（共 {len(current_ids)} 局）。")
-        
-        # 第二步：检查列表是否为空（防御性编程）
         if not segment_games:
             continue
             
@@ -461,28 +334,23 @@ for p_name in selected_players:
         segment_idx += 1
         segment_len = len(segment_games)
         
-        # 1. 提取这一段的 data_id
         seg_data_ids = [g['data_id'] for g in segment_games]
-        # 3. 确定临时文件路径
         temp_csv_path = os.path.join(TEMP_DATA_DIR, f"{p_name}_section{segment_idx}.csv")
     
         if not CACHE_MODE:
             temp_frames = []
             for gid in seg_data_ids:
                 game_moves = big_data_subset.loc[[gid]]
-                
-                # 【核心修改】：按 move_ply 排序，确保步序正确
                 if 'move_ply' in game_moves.columns:
-                    game_moves = game_moves.sort_values(by='move_ply')
-                
+                    game_moves = game_moves.sort_values(by='move_ply')            
                 temp_frames.append(game_moves)
             
             if temp_frames:
-                # print("concat中")
                 seg_df = pd.concat(temp_frames)
             else:
-                print("===============空段处理=============")
-                seg_df = pd.DataFrame() # 空段处理
+                print("空段处理")
+                seg_df = pd.DataFrame()
+
             # 正常模式：根据刚才的 seg_df 生成/覆盖文件
             if not seg_df.empty:
                 seg_df.to_csv(temp_csv_path)
@@ -497,33 +365,17 @@ for p_name in selected_players:
                 current_game_idx += segment_len
                 continue
         
-        # 4. 调用 ddcps
-        # 假设返回的是一个包含 delta_ddcps 列的 DataFrame
+        # 4. 调用 DD-elo
         try:
-            # print(f"==========玩家{p_name}===========")
             print(f"这一段的对局个数为{segment_len}")
             
-            ddcps_result_df = ddcps(temp_csv_path, p_name, elo0)
+            ddcps_result_df = dd_elo(temp_csv_path, p_name, elo0)
             print(f"ddcps的对局个数为{len(ddcps_result_df)}")
             # 5. 回填 delta_ddcps 到 player_dict
-            # 假设 ddcps_result_df 的行数等于输入行数，且顺序一致
-            # 如果 ddcps 可能会过滤数据，这里需要额外的对齐逻辑
-            # if 'delta_ddcps' in ddcps_result_df.columns:
-            #     deltas = ddcps_result_df['delta_ddcps'].values
-                
-            #     # 这是一个简化的回填，假设长度一致
-            #     safe_len = min(len(deltas), segment_len)
-            #     for i in range(safe_len):
-            #         # 通过全局索引找到对应的 game 对象
-            #         games[current_game_idx + i]['delta_ddcps'] = deltas[i]
             if 'delta_ddcps' in ddcps_result_df.columns:
                 deltas = ddcps_result_df['delta_ddcps'].values
-                
-                # 这是一个简化的回填，假设长度一致
                 safe_len = min(len(deltas), segment_len)
-                # print(f"确保长度一致：deltas:{len(deltas)},segment_len: {segment_len}")
                 for i in range(safe_len):
-                    # 通过全局索引找到对应的 game 对象
                     games[current_game_idx + i]['delta_ddcps'] = deltas[i]           
             else:
                 print(f"错误: ddcps 返回结果中没有 delta_ddcps 列 ({temp_csv_path})")
@@ -531,7 +383,6 @@ for p_name in selected_players:
         except Exception as e:
             print(f"调用 ddcps 失败: {e}")
             
-        # 更新全局索引指针
         current_game_idx += segment_len
 
 print("DDCPS 计算完成，数据已回填。")
@@ -540,12 +391,8 @@ print("DDCPS 计算完成，数据已回填。")
 # 5. 统计相关性 (Requirements 5)
 # ==========================================
 print("正在计算相关性...")
-
-# 转换为 numpy 数组方便处理
 np_signals = np.array(all_signal_values)
 np_evidences = np.array(all_evidence_values)
-
-# 筛选条件：只计算 signal 为 1 和 -1 的数据
 mask = np_signals != 0
 
 # 应用筛选
@@ -554,9 +401,6 @@ filtered_evidences = np_evidences[mask]
 
 if len(filtered_signals) > 1: # 至少要有两个点才能算相关系数
     # 计算 Pearson 相关系数
-    # print("==========测试==========")
-    # print(filtered_signals)
-    # print(filtered_evidences)
     corr_matrix = np.corrcoef(filtered_signals, filtered_evidences)
     correlation = corr_matrix[0, 1]
 
@@ -576,103 +420,71 @@ fig, axes = plt.subplots(5, 2, figsize=(24, 20))
 plt.subplots_adjust(hspace=0.4, wspace=0.3)
 axes_flat = axes.flatten()
 
-drawing_players = selected_players[:NUM_DRAW_PLAYERS] # 切片取前 10 个
+drawing_players = selected_players[:NUM_DRAW_PLAYERS] 
 
 for i, p_name in enumerate(drawing_players):
     if i >= len(axes_flat): break
     
     ax1 = axes_flat[i]
-    games = player_dict[p_name] # 已经排好序
+    games = player_dict[p_name]
     
     # 准备绘图数据
     raw_elos = np.array([g['real_elo'] for g in games])
     evidence = np.array([g['evidence'] for g in games])
     signals = np.array([g['signal'] for g in games])
     
-    # Trend Large 需要重新取一下(或者刚才存起来)
     trend_large = apply_trend_convolution(raw_elos, CONV_KERNEL_LARGE)
-    
-    # MA Filter Elo
     ma_elos = apply_moving_average(raw_elos, FILTER_WINDOW)
-    # 补齐长度以便和 signal 对齐绘制
     pad_len = (len(raw_elos) - len(ma_elos)) // 2
     ma_elos_padded = np.pad(ma_elos, (pad_len, len(raw_elos)-len(ma_elos)-pad_len), 'constant', constant_values=np.nan)
         
-    # === 新增逻辑：计算 DDCPS 曲线 ===
-    # ddcps_curve 初始化为全 NaN
     ddcps_curve = np.full(len(raw_elos), np.nan)
     delta_ddcps_arr = np.array([g['delta_ddcps'] for g in games])
     signals_arr = np.array([g['signal'] for g in games])
     
-    # 再次利用 groupby 逻辑来确定段的边界，进行累加计算
     current_idx = 0
     from itertools import groupby # 确保导入
     
-    # print(f"signals_arr的长度为：{signals_arr}")
     for signal_val, group in groupby(signals_arr):
 
         seg_len = len(list(group))
         start_idx = current_idx
         end_idx = current_idx + seg_len
         
-        # 确定该段的起点基准值 (Base Value)
-        # 规则：起点跟 MA 线的段起点值一样
-        # 注意处理 ma_elos_padded 可能为 nan 的情况 (开头结尾)
         base_val = ma_elos_padded[start_idx]
         if np.isnan(base_val):
-            # 如果 MA 在这里是 NaN (因为 padding)，尝试找最近的一个有效值，或者直接用原始 Elo
-            print("======注意：有NAN值=======")
+            print("注意：有NAN值")
             base_val = raw_elos[start_idx]
             
-        # 计算该段的 DDCPS 轨迹
-        # 第一个点 = base_val + delta[0]
-        # 第二个点 = 第一个点 + delta[1] = base_val + delta[0] + delta[1]
-        # 即：cumsum
+        # 计算该段的 DD-elo 轨迹
         segment_deltas = delta_ddcps_arr[start_idx:end_idx]
         segment_cumsum = segment_deltas
-        
         ddcps_curve[start_idx:end_idx] = segment_cumsum
-        
         current_idx += seg_len
-        # print(f"seg_len长度为{seg_len}")
 
     
     x_seq = np.arange(1, len(raw_elos) + 1)
     # 提取 Real Elo 数据
     real_elo_arr = np.array([g['real_elo'] for g in games])
     # --- 绘制 Left Y-Axis (Elo) ---
-    # 1. 原始 Elo (背景)
     ax1.plot(x_seq, raw_elos, color='gray', alpha=0.3, linewidth=1, label='Raw Elo')
-    # 2. Real Elo (新增) 
-    # 颜色：品红色/紫色，虚线，代表理论推演值
     ax1.plot(x_seq, real_elo_arr, color='magenta', linewidth=1.5, linestyle='--', label='Real Elo (Recalc)')
-    # 1.5. DDCPS 线 (新增) 
-    # 颜色：黑色粗线，位于 MA 下方但高于 Raw
     ax1.plot(x_seq, ddcps_curve, color='black', linewidth=1.5, linestyle='-', label='DDCPS')
 
 
     # 2. MA Filter (按 Signal 变色) - 需求 4
-    # 使用 LineCollection 实现多彩线条
-    # 构建点集 (x, y)
     points = np.array([x_seq, ma_elos_padded]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    
-    # 颜色映射: -1(绿), 0(蓝), 1(红)
-    # 这里的 signal 对应的是 segments 的颜色。Segment i 连接点 i 和 i+1。
-    # 我们用点 i 的 signal 来决定 Segment i 的颜色
     seg_signals = signals[:-1] 
     
-    # 自定义 Colormap
-    # 映射逻辑: -1 -> Green, 0 -> Blue, 1 -> Red
+
     cmap = ListedColormap(['green', 'blue', 'red'])
     norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5], cmap.N)
-    
     lc = LineCollection(segments, cmap=cmap, norm=norm)
     lc.set_array(seg_signals)
     lc.set_linewidth(2)
     ax1.add_collection(lc)
     
-    # 添加一个虚拟的 Line2D 用于图例 (因为 LineCollection 不好显示在 legend)
     ax1.plot([], [], color='blue', label='MA (Stable)')
     ax1.plot([], [], color='red', label='MA (Drop Trend)')
     ax1.plot([], [], color='green', label='MA (Rise Trend)')
@@ -681,31 +493,23 @@ for i, p_name in enumerate(drawing_players):
     ax1.set_xlabel('Game Sequence')
     ax1.set_title(f'{p_name} (Signal vs Evidence)', fontsize=12, fontweight='bold')
     ax1.grid(True, linestyle=':', alpha=0.5)
-
-    # --- 绘制 Right Y-Axis (Trend & Evidence) ---
     ax2 = ax1.twinx() 
     
-    # 3. Evidence (mask_cpl_diff_mean) - 需求 2
-    # evidence 通常波动剧烈，建议用浅色细线或散点
+    # 3. Evidence (mask_cpl_diff_mean)
     l_evi = ax2.plot(x_seq, evidence, color='purple', alpha=0.3, linewidth=0.5, label='Evidence (CPL Diff)')
     
-    # 4. Trend Conv (Large) - 需求 1 (删除了 Small)
+    # 4. Trend Conv (Large)
     l_trend = ax2.plot(x_seq, trend_large, color='orange', linestyle='-.', linewidth=1.5, label=f'Trend (K={CONV_KERNEL_LARGE})')
-    
-    # 绘制阈值线辅助观察
     ax2.axhline(TREND_THRESHOLD, color='red', linestyle=':', linewidth=0.5)
     ax2.axhline(-TREND_THRESHOLD, color='green', linestyle=':', linewidth=0.5)
     
     ax2.set_ylabel('Trend / Evidence Value', color='purple')
     
     # 合并图例
-    # ax1 的图例
     h1, l1 = ax1.get_legend_handles_labels()
-    # ax2 的图例
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1+h2, l1+l2, loc='upper left', fontsize='x-small', framealpha=0.9)
 
-# 隐藏多余子图
 for j in range(len(selected_players), len(axes_flat)):
     axes_flat[j].axis('off')
 
@@ -724,24 +528,20 @@ import scipy.stats as stats # 需要导入 scipy 计算相关系数
 print("\n正在进行实验指标验证 (Lead Time & AreaPct)...")
 
 # --- 数据容器初始化 ---
-# 指标 1: Lead Time (K = 2 到 10)
-# lead_time_sums: 存储每个K对应的 Lead Time 总和
 lead_time_sums = {k: 0.0 for k in range(2, 11)}
-# lead_time_counts: 存储每个K计算了多少个有效的阈值点
 lead_time_counts = {k: 0 for k in range(2, 11)}
 
 # 指标 2: Area Percentage
-total_area_improvement = 0.0 # Σ a (分子)
-total_area_diff = 0.0        # Σ (a + b) (分母)
+total_area_improvement = 0.0 # Σ a 
+total_area_diff = 0.0        # Σ (a + b)
 
 valid_segment_count = 0
 
 # 2. Information Coefficient (IC)
-# k_map: {k: {'factor': [], 'outcome': []}}
 ic_k_values = [1, 2, 3, 4, 5]
 ic_data_storage = {k: {'f': [], 'o': []} for k in ic_k_values}
 ic_variant_f = [] # 变体 Factor
-ic_variant_s = [] # 变体 Outcome (Signal)
+ic_variant_s = [] # 变体 Outcome 
 
 # 3. Directional Accuracy (DA)
 da_total_hits = 0
@@ -753,7 +553,6 @@ for p_name in selected_players:
     games.sort(key=lambda x: x['game_id'])
     
     # 1. 提取核心数据 (仅使用 real_elo, delta_ddcps, signal)
-    # 【修正】：delta_ddcps 在这里直接作为 DDCPS 的绝对评分值使用
     real_elos = np.array([g['real_elo'] for g in games])
     ddcps_elos = np.array([g['delta_ddcps'] for g in games]) 
     signals_arr = np.array([g['signal'] for g in games])
@@ -774,12 +573,8 @@ for p_name in selected_players:
         valid_signals = signals_arr[valid_mask]
         
         # === Metric: Directional Accuracy (DA) ===
-        # 公式: sgn(ddcps - real) == -signal
-        # 逻辑检查: 
-        # 上升期(Signal -1) -> -Signal=1 -> 期望 DDCPS>Real -> Factor>0 -> sgn=1. (Match)
         pred_direction = np.sign(valid_factors)
         target_direction = -valid_signals
-        # target_direction = valid_signals
         
         hits = np.sum(pred_direction == target_direction)
         da_total_hits += hits
@@ -790,10 +585,7 @@ for p_name in selected_players:
         ic_variant_s.extend(-valid_signals)
         
     # === Metric: Standard IC (Outcome = Future Return) ===
-    # 针对每一个 K 计算 IC
     N_games = len(real_elos)
-    # 这里对所有局进行计算，不仅仅是 valid_mask，因为平稳期的预测能力也算数
-    # 如果只想看变化期，可以加上 indices = np.where(valid_mask)[0]
     indices = np.arange(N_games) 
     
     for k in ic_k_values:
@@ -809,7 +601,7 @@ for p_name in selected_players:
             ic_data_storage[k]['o'].extend(o_vals)
 
     # -------------------------------------------------------------
-    # Part 2: Lead Time & Area Pct (需要分段)
+    # Part 2: Lead Time & Area Pct
     # -------------------------------------------------------------
     from itertools import groupby
     current_idx = 0
@@ -823,26 +615,21 @@ for p_name in selected_players:
         # 只处理上升期 (-1) 和 下降期 (1)
         if signal_val == -1 or signal_val == 1:
             valid_segment_count += 1
-            
-            # 切片提取本段数据
             seg_real = real_elos[start_idx:end_idx]
             seg_ddcps = ddcps_elos[start_idx:end_idx]
             
             # ---------------------------------------------------------
-            # 指标 2: Area Improvement (累计改进量)
+            # 指标 2: Area Improvemen
             # ---------------------------------------------------------
-            # 分母: |ddcps - real| 的总和
             diff_abs_sum = np.sum(np.abs(seg_ddcps - seg_real))
             
             if diff_abs_sum > 0:
                 improvement_sum = 0.0
                 if signal_val == -1: 
                     # 上升期 (Signal -1): 希望 DDCPS > Real Elo
-                    # 改进量 = max(ddcps - real, 0)
                     improvement_sum = np.sum(np.maximum(seg_ddcps - seg_real, 0))
                 elif signal_val == 1: 
                     # 下降期 (Signal 1): 希望 DDCPS < Real Elo
-                    # 改进量 = max(real - ddcps, 0)
                     improvement_sum = np.sum(np.maximum(seg_real - seg_ddcps, 0))
                 
                 total_area_improvement += improvement_sum
@@ -851,8 +638,6 @@ for p_name in selected_players:
             # ---------------------------------------------------------
             # 指标 1: Lead Time (先到达)
             # ---------------------------------------------------------
-            # 确定区间极值 [E_min, E_max]
-            # 【修正】：使用该段 Real Elo 的全局最大最小值，而非仅首尾
             E_min = np.min(seg_real)
             E_max = np.max(seg_real)
             
@@ -860,35 +645,28 @@ for p_name in selected_players:
             if E_max > E_min: 
                 
                 for K in range(2, 11):
-                    # 对每个 K，计算累积的 lead time
                     k_lead_sum = 0.0
                     
                     for k in range(1, K + 1):
-                        # 计算阈值 theta
                         theta = E_min + (k / K) * (E_max - E_min)
                         
                         # 定义查找函数
                         def get_first_arrival_idx(arr, threshold, sig):
-                            # 上升期 (-1): 寻找 >= theta
                             if sig == -1:
                                 indices = np.where(arr >= threshold)[0]
-                            # 下降期 (1): 寻找 <= theta
                             else:
                                 indices = np.where(arr <= threshold)[0]
                             
                             if len(indices) > 0:
-                                return indices[0] # 返回首次到达的索引
+                                return indices[0] 
                             else:
-                                return len(arr) - 1 # 【修正】：未到达则视为最后一局到达
+                                return len(arr) - 1 
                         
                         t_elo = get_first_arrival_idx(seg_real, theta, signal_val)
                         t_ddcps = get_first_arrival_idx(seg_ddcps, theta, signal_val)
                         
-                        # Lead Time = Elo时间 - DDCPS时间
-                        # 正值表示 DDCPS 更早到达 (索引更小)
                         k_lead_sum += (t_elo - t_ddcps)
                     
-                    # 累加到总表 (对 thresholds 取平均)
                     lead_time_sums[K] += (k_lead_sum / K)
                     lead_time_counts[K] += 1
         
@@ -905,7 +683,6 @@ if total_area_diff > 0:
 lead_time_results = []
 for K in range(2, 11):
     if lead_time_counts[K] > 0:
-        # 平均 Lead Time = 总提前量 / 处理的段数
         avg_lead = lead_time_sums[K] / lead_time_counts[K]
     else:
         avg_lead = 0.0

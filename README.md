@@ -12,7 +12,7 @@ This repository contains the official implementation of the paper:
   <b>Figure: Algorithm Structure (Right) & Performance Showcase (Left) </b>
 </p>
 
-##💡 What is DD-Elo?
+## 💡 What is DD-Elo?
 The Drift-Diffusion-Enhanced Elo (DD-Elo) is a novel chess skill assessment framework designed to address the adaptation lag of ELO systems by integrating move-level engine evaluations (centipawn loss) into rating updates. Inspired by the Drift Diffusion Model, the model architecture optimally accumulates micro-decision evidence (Left Figure). This enables DD-Elo to adapt significantly faster during skill transitions while seamlessly converging back to standard Elo during stable phases (Right Figure).
 
 

@@ -42,14 +42,19 @@ python main.py --cache
 If you wish to verify the full dataset construction pipeline starting entirely from the raw chess move-level dataset, use the standard mode execution.
 
 ### 1. Place the Raw Dataset
-Download the original move-level dataset lichess_db_standard_rated_2019-01.csv (e.g., from the University of Toronto public hosting) and place it under:
-data/raw/lichess_db_standard_rated_2019-01.csv
+Download the original move-level dataset from the [Toronto CSSLab Chess Data](http://csslab.cs.toronto.edu/data/chess/monthly/lichess_db_standard_rated_2019-01.csv.bz2) and place it under the following path:
+
+`data/raw/lichess_db_standard_rated_2019-01.csv`
 
 ### 2. Run Full Pipeline
 Run the main entry script without the cache flag. This will parse the move-level logs, process game-level variables, construct the player index tree, and sequentially compute all assessment dynamics:
 
 ```Bash
 python main.py
+cd src
+python AI_DA_IC.py --cache
+python LeadTime.py --cache
+python StandardIC.py --cache
 ```
 (Note: Executing the full training pipeline from scratch might take several hours depending on your hardware specifications).
 

@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import math
 import re
-from elo_per_game import calculate_new_elo
+from .elo_per_game import calculate_new_elo
 
 a = 60
 z = 0
@@ -111,7 +111,7 @@ def dd_elo(input_csv, name, my_elo, output_csv="_tmp.csv"):
         x *= X_DECA
 
     out_df = pd.DataFrame(results)
-    out_df.to_csv(output_csv, index=False)
+    # out_df.to_csv(output_csv, index=False)
     return out_df
 
 

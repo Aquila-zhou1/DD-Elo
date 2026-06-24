@@ -10,8 +10,8 @@ import os
 import pickle
 import random
 from collections import defaultdict
-import src.elo_per_game as elo_per_game # Elo calculate module
-from src.ddm_elo import dd_elo # DD-Elo core algorithm
+from src import calculate_new_elo # Elo calculate module
+from src import dd_elo # DD-Elo core algorithm
 from itertools import groupby
 import argparse 
 
@@ -224,7 +224,7 @@ for p_name in selected_players:
         
         for i in range(1, len(games)):
             prev_game = games[i-1]
-            new_val = elo_per_game.calculate_new_elo(
+            new_val = calculate_new_elo(
                 my_elo=current_real_elo, 
                 op_elo=prev_game['op_elo'], 
                 win=prev_game['win']

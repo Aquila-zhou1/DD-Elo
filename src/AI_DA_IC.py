@@ -11,8 +11,8 @@ import os
 import pickle
 import random
 from collections import defaultdict
-import elo_per_game 
-from ddm_elo import dd_elo 
+from src import calculate_new_elo # Elo calculate module
+from src import dd_elo # DD-Elo core algorithm
 from itertools import groupby
 import argparse 
 
@@ -25,17 +25,17 @@ args = parser.parse_args()
 # ==========================================
 # 1. Configuration
 # ==========================================
-INPUT_FILE = '../data/cache/game_data.csv' 
-OUTPUT_DIR = '../data_analysis'
-DATA_STRUCT_DIR = '../data/cache'
+INPUT_FILE = 'data/cache/game_data.csv' 
+OUTPUT_DIR = 'data_analysis'
+DATA_STRUCT_DIR = 'data/cache'
 CACHE_FILE = os.path.join(DATA_STRUCT_DIR, 'player_dict.pkl') 
 
 if not os.path.exists(DATA_STRUCT_DIR):
     os.makedirs(DATA_STRUCT_DIR)
 OUTPUT_FILENAME = 'data_analysis_game_person3.png'
 # Temporary data folder configuration
-TEMP_DATA_DIR = '../data/processed'
-BIG_DATA_FILE = '../data/raw/lichess_db_standard_rated_2019-01.csv'
+TEMP_DATA_DIR = 'data/processed'
+BIG_DATA_FILE = 'data/raw/lichess_db_standard_rated_2019-01.csv'
 if not os.path.exists(TEMP_DATA_DIR):
     os.makedirs(TEMP_DATA_DIR)
 
@@ -167,7 +167,7 @@ for p_name in selected_players:
         
         for i in range(1, len(games)):
             prev_game = games[i-1]
-            new_val = elo_per_game.calculate_new_elo(
+            new_val = calculate_new_elo(
                 my_elo=current_real_elo, 
                 op_elo=prev_game['op_elo'], 
                 win=prev_game['win']
@@ -195,7 +195,7 @@ for p_name in selected_players:
 # ==========================================
 # 4.3 新增需求：DDCPS 计算 (分段与大文件处理)
 # ==========================================
-print("正在进行分段与 DDCPS 调用...")
+print("calculating DD-ELo")
 
 for p_name in selected_players:
     games = player_dict[p_name]
@@ -417,4 +417,4 @@ plt.tight_layout()
 out_path_line = os.path.join(OUTPUT_DIR, 'segment_metrics_variant_smoothed.png')
 plt.savefig(out_path_line, dpi=300, bbox_inches='tight')
 plt.close(fig)
-print(f" -> 综合平滑分布图已生成: {out_path_line}")
+print(f" -> smoothed plot saved: {out_path_line}")

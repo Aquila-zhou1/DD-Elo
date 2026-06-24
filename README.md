@@ -54,10 +54,9 @@ Run the main entry script without the cache flag. This will parse the move-level
 ```Bash
 python scripts/process_raw_data.py
 python main.py
-cd src
-python AI_DA_IC.py --cache
-python LeadTime.py --cache
-python StandardIC.py --cache
+python -m src.AI_DA_IC --cache
+python -m src.LeadTime --cache
+python -m src.StandardIC --cache
 ```
 (Note: Executing the full training pipeline from scratch might take several hours depending on your hardware specifications).
 

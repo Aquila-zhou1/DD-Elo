@@ -33,11 +33,20 @@ Run our helper script to fetch the processed datasets and cached dictionaries di
 python scripts/download_data.py
 ```
 ### 3. Run Experiments & Visualization (Cache Mode)
-Execute the main pipeline with the --cache flag. This will load the pre-computed player structures, instantly evaluate all core metrics, and generate the corresponding paper figures:
+- Option A: Instantly evaluate all core metrics and reproduce numerical results (Tables):
 
 ```Bash
 python main.py --cache
 ```
+
+- Option B: Generate the corresponding paper figures:
+
+```Bash
+python -m src.AI_DA_IC --cache
+python -m src.LeadTime --cache
+python -m src.StandardIC --cache
+```
+
 📊 Note: All numerical results, statistical metrics, and visualization charts will be saved directly into the data_analysis/ directory.
 
 ## 🛠️ End-to-End Verification From Scratch

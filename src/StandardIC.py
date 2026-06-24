@@ -19,22 +19,22 @@ import argparse
 # 0. Parse command-line arguments
 # ==========================================
 parser = argparse.ArgumentParser(description="Chess Player Analysis Script")
-parser.add_argument('--cache', action='store_true', help="使用缓存模式，直接利用现有的临时文件")
+parser.add_argument('--cache', action='store_true', help="using cache mode")
 args = parser.parse_args()
 # ==========================================
 # 1. Configuration
 # ==========================================
-INPUT_FILE = './real_data/copy1.csv' 
-OUTPUT_DIR = './data_analysis'
-DATA_STRUCT_DIR = './data_structure' # 【新增】
-CACHE_FILE = os.path.join(DATA_STRUCT_DIR, 'player_dict.pkl') # 【新增】缓存文件名
+INPUT_FILE = '../data/cache/game_data.csv' 
+OUTPUT_DIR = '../data_analysis'
+DATA_STRUCT_DIR = '../data/cache'
+CACHE_FILE = os.path.join(DATA_STRUCT_DIR, 'player_dict.pkl') 
 
 if not os.path.exists(DATA_STRUCT_DIR):
     os.makedirs(DATA_STRUCT_DIR)
 OUTPUT_FILENAME = 'data_analysis_game_person3.png'
 # Temporary data folder configuration
-TEMP_DATA_DIR = './temp_data'
-BIG_DATA_FILE = 'real_data/lichess_db_standard_rated_2019-01.csv'
+TEMP_DATA_DIR = '../data/processed'
+BIG_DATA_FILE = '../data/raw/lichess_db_standard_rated_2019-01.csv'
 if not os.path.exists(TEMP_DATA_DIR):
     os.makedirs(TEMP_DATA_DIR)
 

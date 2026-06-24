@@ -19,24 +19,24 @@ import argparse
 # 0. Parse command-line arguments
 # ==========================================
 parser = argparse.ArgumentParser(description="Chess Player Analysis Script")
-parser.add_argument('--cache', action='store_true', help="使用缓存模式，直接利用现有的临时文件")
+parser.add_argument('--cache', action='store_true', help="using cache mode")
 args = parser.parse_args()
 
 CACHE_MODE = args.cache # define global cache mode flag
 # ==========================================
 # 1. Configuration
 # ==========================================
-INPUT_FILE = './real_data/copy1.csv' 
+INPUT_FILE = './data/cache/game_data.csv' 
 OUTPUT_DIR = './data_analysis'
-DATA_STRUCT_DIR = './data_structure' # 【新增】
-CACHE_FILE = os.path.join(DATA_STRUCT_DIR, 'player_dict.pkl') # 【新增】缓存文件名
+DATA_STRUCT_DIR = './data/cache'
+CACHE_FILE = os.path.join(DATA_STRUCT_DIR, 'player_dict.pkl') 
 
 if not os.path.exists(DATA_STRUCT_DIR):
     os.makedirs(DATA_STRUCT_DIR)
 OUTPUT_FILENAME = 'data_analysis_game_person3.png'
 # Temporary data folder configuration
-TEMP_DATA_DIR = './temp_data'
-BIG_DATA_FILE = 'real_data/lichess_db_standard_rated_2019-01.csv'
+TEMP_DATA_DIR = './data/processed'
+BIG_DATA_FILE = 'data/raw/lichess_db_standard_rated_2019-01.csv'
 if not os.path.exists(TEMP_DATA_DIR):
     os.makedirs(TEMP_DATA_DIR)
 
@@ -260,7 +260,7 @@ for p_name in selected_players:
 # ==========================================
 # 4.3 DD-Elo 
 # ==========================================
-print("\nProcessing DDCPS computation requirements...")
+print("\nProcessing DD-Elo computation requirements...")
 
 # --- Step A: Optimize large file reading ---
 # 1. Collect target ID set
@@ -304,8 +304,8 @@ else:
     big_data_subset = pd.DataFrame() 
 
 
-# --- Step B: Segment processing and DDCPS computation ---
-print("Processing segments and calling DDCPS...")
+# --- Step B: Segment processing and DD-Elo computation ---
+print("Processing segments and calling DD-Elo...")
 
 for p_name in selected_players:
     games = player_dict[p_name] 
@@ -386,12 +386,10 @@ np_signals = np.array(all_signal_values)
 np_evidences = np.array(all_evidence_values)
 mask = np_signals != 0
 
-# 应用筛选
 filtered_signals = np_signals[mask]
 filtered_evidences = np_evidences[mask]
 
-if len(filtered_signals) > 1: # 至少要有两个点才能算相关系数
-    # 计算 Pearson 相关系数
+if len(filtered_signals) > 1:
     corr_matrix = np.corrcoef(filtered_signals, filtered_evidences)
     correlation = corr_matrix[0, 1]
 
@@ -703,7 +701,7 @@ text_str1 = (
     f"Segments Analyzed: {valid_segment_count}\n\n"
     f"[Area Improvement Percentage]\n"
     f"  Result: {final_area_pct:.2f}%\n"
-    f"  (DDCPS reduces lag area vs Baseline)\n"
+    f"  (DD-Elo reduces lag area vs Baseline)\n"
 )
 plt.text(0.05, 0.60, text_str1, fontsize=12, family='monospace', transform=ax1.transAxes, va='top')
 
@@ -712,7 +710,7 @@ table_data_lt = []
 table_data_lt.append([0.0] * 9) # Baseline
 table_data_lt.append([round(x, 2) for x in lead_time_results])
 col_labels_lt = [f"K={k}" for k in range(2, 11)]
-row_labels_lt = ['Real Elo (0)', 'DDCPS Lead']
+row_labels_lt = ['Real Elo (0)', 'DD-Elo Lead']
 
 table_lt = plt.table(cellText=table_data_lt, rowLabels=row_labels_lt, colLabels=col_labels_lt,
                      loc='center', cellLoc='center', bbox=[0.05, 0.1, 0.9, 0.2])
@@ -740,7 +738,7 @@ text_str2 = (
     f"===================================\n"
     f"[Directional Accuracy (DA)]\n"
     f"  Score: {final_da:.4f} ({final_da*100:.2f}%)\n"
-    f"  Formula: mean( sgn(ddcps-real) == -signal )\n\n"
+    f"  Formula: mean( sgn(dd-elo-real) == -signal )\n\n"
     f"[IC Variant (Outcome=Signal)]\n"
     f"  Spearman IC: {final_ic_variant:.4f}\n"
 )
@@ -751,7 +749,7 @@ table_data_ic = []
 table_data_ic.append([0.0] * 5) # Baseline
 table_data_ic.append([round(x, 4) for x in ic_results])
 col_labels_ic = [f"k={k}" for k in ic_k_values]
-row_labels_ic = ['Real Elo (0)', 'DDCPS IC']
+row_labels_ic = ['Real Elo (0)', 'DD-Elo IC']
 
 table_ic = plt.table(cellText=table_data_ic, rowLabels=row_labels_ic, colLabels=col_labels_ic,
                      loc='center', cellLoc='center', bbox=[0.05, 0.1, 0.9, 0.2])

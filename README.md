@@ -52,6 +52,7 @@ Download the original move-level dataset from the [Toronto CSSLab Chess Data](ht
 Run the main entry script without the cache flag. This will parse the move-level logs, process game-level variables, construct the player index tree, and sequentially compute all assessment dynamics:
 
 ```Bash
+python scripts/process_raw_data.py
 python main.py
 cd src
 python AI_DA_IC.py --cache
@@ -72,6 +73,7 @@ python StandardIC.py --cache
 │   └── StandardIC.py
 ├── scripts/
 │   └── download_data.py        # Automated download utility for HF datasets
+│   └── process_raw_data.py     
 ├── data_analysis/              # Results output directory
 ├── main.py                     
 ├── requirements.txt            
